@@ -13,8 +13,20 @@ class ElementValidator:
     
     async def __aenter__(self):
         """异步上下文管理器入口"""
+        # 添加真实浏览器请求头,避免403错误
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0'
+        }
+        
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
+            timeout=aiohttp.ClientTimeout(total=self.timeout),
+            headers=headers
         )
         return self
     
@@ -55,9 +67,30 @@ class ElementValidator:
         try:
             start_time = asyncio.get_event_loop().time()
             
-            # 使用 HEAD 请求减少开销
-            async with self.session.head(url, allow_redirects=True) as response:
+            # 添加Referer头以模拟真实浏览器行为
+            extra_headers = {}
+            if base_url:
+                extra_headers['Referer'] = base_url
+            
+            # 首先尝试 HEAD 请求减少开销
+            async with self.session.head(url, allow_redirects=True, headers=extra_headers) as response:
                 response_time = asyncio.get_event_loop().time() - start_time
+                
+                # 如果HEAD请求返回403或405(Method Not Allowed),尝试GET请求
+                if response.status in [403, 405]:
+                    try:
+                        start_time = asyncio.get_event_loop().time()
+                        async with self.session.get(url, allow_redirects=True, headers=extra_headers) as get_response:
+                            response_time = asyncio.get_event_loop().time() - start_time
+                            return {
+                                'valid': 200 <= get_response.status < 400,
+                                'status_code': get_response.status,
+                                'response_time': round(response_time, 3),
+                                'error': None
+                            }
+                    except Exception:
+                        # GET请求也失败,返回HEAD的结果
+                        pass
                 
                 return {
                     'valid': 200 <= response.status < 400,

@@ -56,6 +56,9 @@ class MainWindow(QMainWindow):
         self.btn_results.clicked.connect(lambda: self.stack.setCurrentWidget(self.results_view))
         self.btn_history.clicked.connect(lambda: self._show_history())
         self.btn_ai_analysis.clicked.connect(lambda: self._show_ai_analysis())
+        
+        # 连接扫描完成信号
+        self.scan_view.scan_completed.connect(self._on_scan_completed)
 
         
         # Style
@@ -80,4 +83,8 @@ class MainWindow(QMainWindow):
         """显示AI分析并刷新会话列表"""
         self.ai_analysis_view.load_sessions()
         self.stack.setCurrentWidget(self.ai_analysis_view)
+    
+    def _on_scan_completed(self, session_id):
+        """扫描完成后自动切换到历史视图"""
+        self._show_history()
 

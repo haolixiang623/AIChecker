@@ -113,6 +113,8 @@ class ScanWorker(QThread):
         self.log.emit("验证完成!")
 
 class ScanView(QWidget):
+    scan_completed = Signal(int)  # 发送扫描完成信号,携带session_id
+    
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -156,6 +158,9 @@ class ScanView(QWidget):
         self.btn_start.setEnabled(True)
         if session_id:
             self.log_area.append(f"扫描完成! 会话 ID: {session_id}")
+            self.log_area.append("正在跳转到扫描历史...")
+            # 发送完成信号,通知主窗口切换视图
+            self.scan_completed.emit(session_id)
         else:
             self.log_area.append("扫描失败")
 
@@ -373,7 +378,9 @@ class ScanHistoryView(QWidget):
     
     def view_session_details(self, session_id):
         """查看会话详情"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QTabWidget, QTableWidget, QTableWidgetItem
+        from PySide6.QtCore import Qt
+        from utils.status_codes import get_status_description, get_status_color
         
         # 获取会话摘要
         summary = self.storage.get_session_summary(session_id)
@@ -381,10 +388,16 @@ class ScanHistoryView(QWidget):
         # 创建对话框显示详情
         dialog = QDialog(self)
         dialog.setWindowTitle(f"扫描会话 #{session_id} 详情")
-        dialog.resize(600, 400)
+        dialog.resize(900, 600)
         
         layout = QVBoxLayout(dialog)
         
+        # 使用Tab页分别显示摘要和元素列表
+        tab_widget = QTabWidget()
+        
+        # Tab 1: 摘要信息
+        summary_widget = QWidget()
+        summary_layout = QVBoxLayout(summary_widget)
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         
@@ -418,7 +431,82 @@ URL: {summary['url']}
 """
 
         text_edit.setPlainText(details)
-        layout.addWidget(text_edit)
+        summary_layout.addWidget(text_edit)
+        tab_widget.addTab(summary_widget, "摘要信息")
+        
+        # Tab 2: 元素列表
+        elements_widget = QWidget()
+        elements_layout = QVBoxLayout(elements_widget)
+        
+        elements_table = QTableWidget()
+        elements_table.setColumnCount(6)
+        elements_table.setHorizontalHeaderLabels(["类型", "文本", "链接/选择器", "验证状态", "状态描述", "响应时间"])
+        elements_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        # 加载元素数据
+        elements = self.storage.get_elements_by_session(session_id)
+        elements_table.setRowCount(len(elements))
+        
+        for i, el in enumerate(elements):
+            # 类型
+            elements_table.setItem(i, 0, QTableWidgetItem(el.type))
+            
+            # 文本
+            text_display = el.text[:30] + "..." if el.text and len(el.text) > 30 else (el.text or "")
+            text_item = QTableWidgetItem(text_display)
+            if el.text and len(el.text) > 30:
+                text_item.setToolTip(el.text)
+            elements_table.setItem(i, 1, text_item)
+            
+            # 链接或选择器
+            if el.href:
+                href_item = QTableWidgetItem(el.href[:60] + "..." if len(el.href) > 60 else el.href)
+                href_item.setToolTip(el.href)
+                elements_table.setItem(i, 2, href_item)
+            else:
+                selector_item = QTableWidgetItem(el.selector[:40] + "..." if el.selector and len(el.selector) > 40 else (el.selector or "-"))
+                if el.selector:
+                    selector_item.setToolTip(el.selector)
+                elements_table.setItem(i, 2, selector_item)
+            
+            # 验证状态
+            if el.validated:
+                status_item = QTableWidgetItem("✅ 已验证")
+                status_item.setForeground(Qt.darkGreen)
+            else:
+                status_item = QTableWidgetItem("⚪ 未验证")
+                status_item.setForeground(Qt.gray)
+            elements_table.setItem(i, 3, status_item)
+            
+            # 状态描述
+            if el.type == 'a' and el.status_code is not None:
+                status_desc = get_status_description(el.status_code)
+                desc_item = QTableWidgetItem(status_desc)
+                desc_item.setForeground(get_status_color(el.status_code))
+                if el.validation_error:
+                    desc_item.setToolTip(f"错误: {el.validation_error}")
+                elements_table.setItem(i, 4, desc_item)
+            elif el.clickable is not None:
+                clickable_text = "✅ 可点击" if el.clickable else "❌ 不可点击"
+                clickable_item = QTableWidgetItem(clickable_text)
+                clickable_item.setForeground(Qt.darkGreen if el.clickable else Qt.red)
+                if el.validation_error:
+                    clickable_item.setToolTip(f"错误: {el.validation_error}")
+                elements_table.setItem(i, 4, clickable_item)
+            else:
+                elements_table.setItem(i, 4, QTableWidgetItem("-"))
+            
+            # 响应时间
+            if el.response_time is not None:
+                time_text = f"{el.response_time:.2f}s"
+                elements_table.setItem(i, 5, QTableWidgetItem(time_text))
+            else:
+                elements_table.setItem(i, 5, QTableWidgetItem("-"))
+        
+        elements_layout.addWidget(elements_table)
+        tab_widget.addTab(elements_widget, f"元素列表 ({len(elements)})")
+        
+        layout.addWidget(tab_widget)
         
         btn_close = QPushButton("关闭")
         btn_close.clicked.connect(dialog.close)
