@@ -86,4 +86,52 @@ class StorageManager:
         with db.atomic():
             for element_id, validation_data in validations:
                 self.update_element_validation(element_id, validation_data)
+    
+    def get_session_summary(self, session_id):
+        """
+        获取会话的详细摘要信息
+        
+        Args:
+            session_id: 会话 ID
+            
+        Returns:
+            dict: 包含会话信息和统计数据的字典
+        """
+        session = ScanSession.get_by_id(session_id)
+        summary = session.get_validation_summary()
+        
+        return {
+            'session': session,
+            'url': session.url,
+            'start_time': session.start_time,
+            'end_time': session.end_time,
+            'duration': session.get_duration(),
+            'status': session.status,
+            **summary
+        }
+    
+    def get_session_ai_reports(self, session_id):
+        """
+        获取会话的所有AI分析报告
+        
+        Args:
+            session_id: 会话 ID
+            
+        Returns:
+            list: AIReport 对象列表
+        """
+        return AIReport.select().where(AIReport.session == session_id).order_by(AIReport.created_at.desc())
+    
+    def get_element_ai_reports(self, element_id):
+        """
+        获取元素的所有AI分析报告
+        
+        Args:
+            element_id: 元素 ID
+            
+        Returns:
+            list: AIReport 对象列表
+        """
+        return AIReport.select().where(AIReport.element == element_id).order_by(AIReport.created_at.desc())
+
 

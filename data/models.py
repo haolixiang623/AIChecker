@@ -12,6 +12,49 @@ class ScanSession(BaseModel):
     start_time = DateTimeField(default=datetime.datetime.now)
     end_time = DateTimeField(null=True)
     status = CharField(default='pending') # pending, completed, failed
+    
+    def get_element_count(self):
+        """获取此会话的元素总数"""
+        return self.elements.count()
+    
+    def get_validation_summary(self):
+        """获取验证结果摘要"""
+        total = self.elements.count()
+        validated = self.elements.where(PageElement.validated == True).count()
+        
+        # 统计链接状态
+        links = self.elements.where(PageElement.type == 'a')
+        link_total = links.count()
+        link_ok = links.where(
+            (PageElement.status_code >= 200) & 
+            (PageElement.status_code < 300)
+        ).count()
+        link_error = links.where(
+            (PageElement.status_code >= 400)
+        ).count()
+        
+        # 统计按钮状态
+        buttons = self.elements.where(PageElement.type.in_(['button', 'input']))
+        button_total = buttons.count()
+        button_clickable = buttons.where(PageElement.clickable == True).count()
+        
+        return {
+            'total_elements': total,
+            'validated_elements': validated,
+            'link_total': link_total,
+            'link_ok': link_ok,
+            'link_error': link_error,
+            'button_total': button_total,
+            'button_clickable': button_clickable,
+        }
+    
+    def get_duration(self):
+        """获取扫描持续时间（秒）"""
+        if self.end_time and self.start_time:
+            delta = self.end_time - self.start_time
+            return delta.total_seconds()
+        return None
+
 
 class PageElement(BaseModel):
     session = ForeignKeyField(ScanSession, backref='elements')
@@ -45,5 +88,12 @@ class AIReport(BaseModel):
     created_at = DateTimeField(default=datetime.datetime.now)
 
 def init_db():
-    db.connect()
-    db.create_tables([ScanSession, PageElement, AIReport])
+    # 检查数据库是否已连接，避免重复连接
+    if not db.is_closed():
+        # 数据库已连接，只需确保表存在
+        db.create_tables([ScanSession, PageElement, AIReport], safe=True)
+    else:
+        # 数据库未连接，先连接再创建表
+        db.connect()
+        db.create_tables([ScanSession, PageElement, AIReport], safe=True)
+
