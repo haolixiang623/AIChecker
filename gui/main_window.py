@@ -1,12 +1,18 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel
 from PySide6.QtCore import Qt
-from gui.views import DashboardView, ScanView, ResultsView, ScanHistoryView, AIAnalysisView
+from gui.views import DashboardView, ScanView, ScanHistoryView, AIAnalysisView
+from gui.scheduled_view import ScheduledScanView
+from core.scheduler import TaskScheduler
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AIChecker - 智能网页巡检")
         self.resize(1200, 800)
+        
+        # 初始化调度器
+        self.scheduler = TaskScheduler()
+        self.scheduler.start()
         
         # Central Widget
         central_widget = QWidget()
@@ -22,11 +28,11 @@ class MainWindow(QMainWindow):
         
         self.btn_dashboard = QPushButton("仪表盘")
         self.btn_scan = QPushButton("新建扫描")
-        self.btn_results = QPushButton("扫描结果")
+        self.btn_scheduled = QPushButton("定时扫描")
         self.btn_history = QPushButton("扫描历史")
         self.btn_ai_analysis = QPushButton("AI 分析")
         
-        for btn in [self.btn_dashboard, self.btn_scan, self.btn_results, 
+        for btn in [self.btn_dashboard, self.btn_scan, self.btn_scheduled,
                     self.btn_history, self.btn_ai_analysis]:
             btn.setFixedHeight(40)
             sidebar_layout.addWidget(btn)
@@ -40,20 +46,20 @@ class MainWindow(QMainWindow):
         # Views
         self.dashboard_view = DashboardView()
         self.scan_view = ScanView()
-        self.results_view = ResultsView()
+        self.scheduled_view = ScheduledScanView(self.scheduler)
         self.history_view = ScanHistoryView()
         self.ai_analysis_view = AIAnalysisView()
         
         self.stack.addWidget(self.dashboard_view)
         self.stack.addWidget(self.scan_view)
-        self.stack.addWidget(self.results_view)
+        self.stack.addWidget(self.scheduled_view)
         self.stack.addWidget(self.history_view)
         self.stack.addWidget(self.ai_analysis_view)
         
         # Signals
         self.btn_dashboard.clicked.connect(lambda: self.stack.setCurrentWidget(self.dashboard_view))
         self.btn_scan.clicked.connect(lambda: self.stack.setCurrentWidget(self.scan_view))
-        self.btn_results.clicked.connect(lambda: self.stack.setCurrentWidget(self.results_view))
+        self.btn_scheduled.clicked.connect(lambda: self._show_scheduled())
         self.btn_history.clicked.connect(lambda: self._show_history())
         self.btn_ai_analysis.clicked.connect(lambda: self._show_ai_analysis())
         
@@ -87,4 +93,14 @@ class MainWindow(QMainWindow):
     def _on_scan_completed(self, session_id):
         """扫描完成后自动切换到历史视图"""
         self._show_history()
+    
+    def _show_scheduled(self):
+        """显示定时扫描并刷新任务列表"""
+        self.scheduled_view.load_tasks()
+        self.stack.setCurrentWidget(self.scheduled_view)
+    
+    def closeEvent(self, event):
+        """关闭窗口时停止调度器"""
+        self.scheduler.stop()
+        event.accept()
 

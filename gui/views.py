@@ -292,9 +292,9 @@ class ScanHistoryView(QWidget):
         layout.addWidget(QLabel("<h2>扫描历史</h2>"))
         
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
-            "ID", "目标URL", "开始时间", "持续时间", "状态", "元素数", "操作"
+            "ID", "目标URL", "开始时间", "持续时间", "状态", "元素数", "查看详情", "查看元素"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -352,10 +352,15 @@ class ScanHistoryView(QWidget):
             element_count = session.get_element_count()
             self.table.setItem(i, 5, QTableWidgetItem(str(element_count)))
             
-            # 操作按钮
+            # 查看详情按钮
             btn_view = QPushButton("查看详情")
             btn_view.clicked.connect(lambda checked, sid=session.id: self.view_session_details(sid))
             self.table.setCellWidget(i, 6, btn_view)
+            
+            # 查看元素按钮
+            btn_elements = QPushButton("查看元素")
+            btn_elements.clicked.connect(lambda checked, sid=session.id: self.view_session_elements(sid))
+            self.table.setCellWidget(i, 7, btn_elements)
     
     def _format_relative_time(self, dt):
         """格式化相对时间"""
@@ -513,6 +518,135 @@ URL: {summary['url']}
         layout.addWidget(btn_close)
         
         dialog.exec()
+    
+    def view_session_elements(self, session_id):
+        """查看会话的所有元素列表"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QLabel, QHeaderView
+        from PySide6.QtCore import Qt
+        from utils.status_codes import get_status_description, get_status_color
+        
+        # 创建对话框
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"扫描会话 #{session_id} - 元素列表")
+        dialog.resize(1000, 700)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 获取会话信息
+        session = self.storage.get_recent_sessions(100)
+        session_obj = None
+        for s in session:
+            if s.id == session_id:
+                session_obj = s
+                break
+        
+        if session_obj:
+            info_label = QLabel(f"URL: {session_obj.url} | 扫描时间: {session_obj.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            layout.addWidget(info_label)
+        
+        # 创建元素表格
+        table = QTableWidget()
+        table.setColumnCount(7)
+        table.setHorizontalHeaderLabels(["类型", "文本", "链接/选择器", "验证状态", "状态描述", "响应时间", "操作"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        # 加载元素数据
+        elements = self.storage.get_elements_by_session(session_id)
+        table.setRowCount(len(elements))
+        
+        for i, el in enumerate(elements):
+            # 类型
+            table.setItem(i, 0, QTableWidgetItem(el.type))
+            
+            # 文本
+            text_display = el.text[:30] + "..." if el.text and len(el.text) > 30 else (el.text or "")
+            text_item = QTableWidgetItem(text_display)
+            if el.text and len(el.text) > 30:
+                text_item.setToolTip(el.text)
+            table.setItem(i, 1, text_item)
+            
+            # 链接或选择器
+            if el.href:
+                href_item = QTableWidgetItem(el.href[:60] + "..." if len(el.href) > 60 else el.href)
+                href_item.setToolTip(el.href)
+                table.setItem(i, 2, href_item)
+            else:
+                selector_item = QTableWidgetItem(el.selector[:40] + "..." if el.selector and len(el.selector) > 40 else (el.selector or "-"))
+                if el.selector:
+                    selector_item.setToolTip(el.selector)
+                table.setItem(i, 2, selector_item)
+            
+            # 验证状态
+            if el.validated:
+                status_item = QTableWidgetItem("✅ 已验证")
+                status_item.setForeground(Qt.darkGreen)
+            else:
+                status_item = QTableWidgetItem("⚪ 未验证")
+                status_item.setForeground(Qt.gray)
+            table.setItem(i, 3, status_item)
+            
+            # 状态描述
+            if el.type == 'a' and el.status_code is not None:
+                status_desc = get_status_description(el.status_code)
+                desc_item = QTableWidgetItem(status_desc)
+                desc_item.setForeground(get_status_color(el.status_code))
+                if el.validation_error:
+                    desc_item.setToolTip(f"错误: {el.validation_error}")
+                table.setItem(i, 4, desc_item)
+            elif el.clickable is not None:
+                clickable_text = "✅ 可点击" if el.clickable else "❌ 不可点击"
+                clickable_item = QTableWidgetItem(clickable_text)
+                clickable_item.setForeground(Qt.darkGreen if el.clickable else Qt.red)
+                if el.validation_error:
+                    clickable_item.setToolTip(f"错误: {el.validation_error}")
+                table.setItem(i, 4, clickable_item)
+            else:
+                table.setItem(i, 4, QTableWidgetItem("-"))
+            
+            # 响应时间
+            if el.response_time is not None:
+                time_text = f"{el.response_time:.2f}s"
+                table.setItem(i, 5, QTableWidgetItem(time_text))
+            else:
+                table.setItem(i, 5, QTableWidgetItem("-"))
+            
+            # AI分析按钮
+            btn_analyze = QPushButton("AI 分析")
+            btn_analyze.clicked.connect(lambda checked, e=el: self.analyze_element(e))
+            table.setCellWidget(i, 6, btn_analyze)
+        
+        layout.addWidget(table)
+        
+        # 关闭按钮
+        btn_close = QPushButton("关闭")
+        btn_close.clicked.connect(dialog.close)
+        layout.addWidget(btn_close)
+        
+        dialog.exec()
+    
+    def analyze_element(self, element):
+        """分析单个元素"""
+        from PySide6.QtWidgets import QMessageBox
+        from ai.client import AIClient
+        
+        client = AIClient()
+        if not client.client:
+            QMessageBox.warning(self, "缺少 API Key", "请设置 OPENAI_API_KEY 环境变量或在代码中配置。")
+            return
+        
+        QMessageBox.information(self, "分析中", "正在请求 AI 分析，请稍候...")
+        
+        report = client.analyze_element({
+            "type": element.type,
+            "text": element.text,
+            "href": element.href,
+            "selector": element.selector
+        })
+        
+        # 保存报告到DB
+        self.storage.save_report(report, session_id=element.session.id, element_id=element.id)
+        
+        QMessageBox.information(self, "分析报告", report)
 
 
 class AIAnalysisWorker(QThread):

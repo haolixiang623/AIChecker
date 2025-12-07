@@ -87,13 +87,36 @@ class AIReport(BaseModel):
     content = TextField()
     created_at = DateTimeField(default=datetime.datetime.now)
 
+class ScheduledTask(BaseModel):
+    """定时扫描任务模型"""
+    name = CharField()  # 任务名称
+    url = TextField()  # 扫描URL
+    enabled = BooleanField(default=True)  # 是否启用
+    
+    # 定时配置
+    schedule_type = CharField()  # 'interval' 或 'cron'
+    interval_minutes = IntegerField(null=True)  # 间隔分钟数
+    cron_expression = CharField(null=True)  # cron表达式
+    
+    # 扫描选项
+    enable_validation = BooleanField(default=False)  # 是否启用验证
+    generate_ai_report = BooleanField(default=False)  # 是否生成AI报告
+    
+    # 执行记录
+    last_run_time = DateTimeField(null=True)  # 最后执行时间
+    next_run_time = DateTimeField(null=True)  # 下次执行时间
+    last_session_id = IntegerField(null=True)  # 最后扫描会话ID
+    
+    created_at = DateTimeField(default=datetime.datetime.now)
+
 def init_db():
     # 检查数据库是否已连接，避免重复连接
     if not db.is_closed():
         # 数据库已连接，只需确保表存在
-        db.create_tables([ScanSession, PageElement, AIReport], safe=True)
+        db.create_tables([ScanSession, PageElement, AIReport, ScheduledTask], safe=True)
     else:
         # 数据库未连接，先连接再创建表
         db.connect()
-        db.create_tables([ScanSession, PageElement, AIReport], safe=True)
+        db.create_tables([ScanSession, PageElement, AIReport, ScheduledTask], safe=True)
+
 

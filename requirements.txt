@@ -3,3 +3,4 @@ PySide6
 openai
 peewee
 aiohttp
+apscheduler
